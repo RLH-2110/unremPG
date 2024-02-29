@@ -92,16 +92,11 @@ int generate(int passwordLength, time_t random) {
 
 		if (bytes == 0) {
 			int freeBytes = passwordLength - i;
-			if (freeBytes > 4) freeBytes = 3; // we use this for UTF8 lenghts, and max is 4. but we only want to go up to 3, to avoid 'invalid' character
+			if (freeBytes > 4) freeBytes = 4; // we use this for UTF8 lenghts, and max is 4
 
-			bytes = rand() % freeBytes + 1; // from 1 to 3
+			bytes = rand() % freeBytes + 1;
 
-			password_ptr[i] = utf8_lenghts_data[bytes-1] + (((unsigned char)rand()) & utf8_lenghts_data_maskI[bytes-1]);
-
-			if (bytes == 4 && password_ptr[i] >= 0xe0) {	// characters after this might not make much sense.
-				password_ptr[i] -= 0x20; // get it below 0xe0
-				password_ptr[i] = utf8_lenghts_data[bytes - 1] + (password_ptr[i] & utf8_lenghts_data_maskI[bytes - 1]);	// make sure the formating is still right
-			}
+			password_ptr[i] = utf8_lenghts_data[bytes] + (((unsigned char)rand()) & utf8_lenghts_data_maskI[bytes]);
 
 			if (password_ptr[i] < 0x20) // if we are in the range of controll charatcers
 				password_ptr[i] += 0x20;	// dont let them be in the password.
