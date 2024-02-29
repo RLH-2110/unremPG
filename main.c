@@ -3,7 +3,6 @@
 #include <stdlib.h>
 
 #define cls fputs("\033[H\033[J",stdout) // sets cursor to 0,0 and clears screen from curser to the end of the screen
-#define null 0
 #define backspace 0x8
 
 int generate(int passwordLength, time_t random);
@@ -29,6 +28,8 @@ int main() {
 	passwordLength = 10 + (random % 60); // get current second and add 10 (10 to 69)
 	
 
+	// used for checking function retrurns
+	int ret;
 
 
 	reset();	// cls and draw the menue
@@ -45,14 +46,15 @@ int main() {
 		case 'E':
 			return 0;
 
-		case 'G':
-			generate(passwordLength,random);
+		case 'G':;
+			ret = generate(passwordLength,random);
+			if (ret != 0) return ret;	 // if we got a error, return the error
 
 			if (reset() == EOF) return -2;	// idk how to fix the potential error from puts, so just close the progamm.
 			break;
 
 		case 'S':;
-			int ret = settings(&passwordLength);	// get to the change setting menue
+			ret = settings(&passwordLength);	// get to the change setting menue
 			if (ret != 0) return ret;	 // if we got a error, return the error
 
 			if (reset() == EOF) return -2;	// idk how to fix the potential error from puts, so just close the progamm.
@@ -66,17 +68,17 @@ int main() {
 }
 
 int generate(int passwordLength, time_t random) {
-	char *password_ptr = null; // we will save a pointer to the password here 
+	unsigned char *password_ptr = NULL; // we will save a pointer to the password here 
 
 	password_ptr = malloc(sizeof(char)*(passwordLength + 1));
 
-	if (password_ptr == null) {
+	if (password_ptr == NULL) {
 		puts("out of memory!");
 		return -3;
 	}
 
-	char utf8_lenghts_data[4] =		  { 0b00000000,0b11000000,0b11100000,0b11110000 }; //data for the first byte to show the length of the char
-	char utf8_lenghts_data_maskI[4] = { 0b01111111,0b00011111,0b00001111,0b00000111 }; // mask of the data that shows the lenght of th char in the first byte. (Inverted)
+	unsigned char utf8_lenghts_data[4] =		  { 0b00000000,0b11000000,0b11100000,0b11110000 }; //data for the first byte to show the length of the char
+	unsigned char utf8_lenghts_data_maskI[4] = { 0b01111111,0b00011111,0b00001111,0b00000111 }; // mask of the data that shows the lenght of th char in the first byte. (Inverted)
 
 #define utf8_following	      0b10000000
 #define utf8_following_maskI  0b00111111
@@ -90,11 +92,16 @@ int generate(int passwordLength, time_t random) {
 
 		if (bytes == 0) {
 			int freeBytes = passwordLength - i;
-			if (freeBytes > 4) freeBytes = 4; // we use this for UTF8 lenghts, and max is 4
+			if (freeBytes > 4) freeBytes = 3; // we use this for UTF8 lenghts, and max is 4. but we only want to go up to 3, to avoid 'invalid' character
 
-			bytes = rand() % freeBytes + 1;
+			bytes = rand() % freeBytes + 1; // from 1 to 3
 
-			password_ptr[i] = utf8_lenghts_data[bytes] + (((char)rand()) & utf8_lenghts_data_maskI[bytes]);
+			password_ptr[i] = utf8_lenghts_data[bytes-1] + (((unsigned char)rand()) & utf8_lenghts_data_maskI[bytes-1]);
+
+			if (bytes == 4 && password_ptr[i] >= 0xe0) {	// characters after this might not make much sense.
+				password_ptr[i] -= 0x20; // get it below 0xe0
+				password_ptr[i] = utf8_lenghts_data[bytes - 1] + (password_ptr[i] & utf8_lenghts_data_maskI[bytes - 1]);	// make sure the formating is still right
+			}
 
 			if (password_ptr[i] < 0x20) // if we are in the range of controll charatcers
 				password_ptr[i] += 0x20;	// dont let them be in the password.
@@ -102,13 +109,13 @@ int generate(int passwordLength, time_t random) {
 			bytes--;
 		}
 		else {
-			password_ptr[i] = utf8_following + (((char)rand()) & utf8_following_maskI);
+			password_ptr[i] = utf8_following + (((unsigned char)rand()) & utf8_following_maskI);
 
 			bytes--;
 		}
 	}
 
-	password_ptr[passwordLength + 1] = '\0';
+	password_ptr[passwordLength] = '\0';
 
 	fputs("password: ", stdout);
 	puts(password_ptr);
@@ -223,11 +230,32 @@ int password_options(char* password_ptr) {
 		case 'D':
 			return 0;
 
-		case 'S':
+		case 'S':;
 
-			if (reset_password_options(password_ptr) == EOF) return -2;	// idk how to fix the potential error from puts, so just close the progamm.
-			break;
-		case 'C':;
+			const char *filename = "./password.txt";	// fixed file name, because implementing anything else takes time
+
+			//
+			//	we dont check if the file already exists, we dont check if we allowed to modify it, we just try to write the file, and if there is an error
+			// then its the problem of the user.
+			//
+
+			FILE* file = NULL;
+			if (fopen_s(&file, filename, "w") != 0) {
+				puts("file open error!");
+				return -4;
+			}
+
+			if (file == NULL) { 
+				puts("file error!");
+				return -4;
+			}
+
+			if (fputs(password_ptr, file) != 0) {
+				puts("file write error!");
+				return -4;
+			}
+
+			fclose(file);
 
 			if (reset_password_options(password_ptr) == EOF) return -2;	// idk how to fix the potential error from puts, so just close the progamm.
 			break;
@@ -245,6 +273,6 @@ int reset_password_options(char* password_ptr) {
 	cls;
 	fputs("Menue\n----------\nPassword [S]ettings\n[G]enerate Password\n[E]xit Progamm\n\nPassword: ",stdout);
 	puts(password_ptr);
-	puts("\n----------\n[S]ave password in file\n[C]opy password to clipboard\n[D]one\n");
+	puts("\n----------\n[S]ave password in pasword.txt (overwrites)\n[D]one\n");
 	return 0;
 }
