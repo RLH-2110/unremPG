@@ -22,7 +22,7 @@ int getch() {
 	struct termios oldt, newt;
 	tcgetattr(STDIN_FILENO, &oldt);
 	newt = oldt;
-	mewt.c_lflag &= ~ICANON | ECHO);
+	newt.c_lflag &= ~(ICANON | ECHO);
 	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
 
 	int ch = getchar();
@@ -247,7 +247,7 @@ int settings(unsigned short *passwordLength_ptr) {
 		case 'L':;
 			
 			int ret = puts("Password lenght: ");
-			if (ret != 0) return ret;
+			if (ret == EOF) return ret;
 
 			ret = getNumber(2,passwordLength_ptr);
 			if (ret != 0) return ret;
@@ -272,20 +272,20 @@ int reset() {
 int reset_settings() {
 	cls;
 	int ret = puts(defaultMenue);
-	if (ret != 0) return ret;
+	if (ret == EOF) return ret;
 	return puts("\n----------\n\nset Password [L]enght\n[D]one\n");
 }
 
 int reset_password_options(char* password_ptr) {
 	cls;
 	int ret = puts(defaultMenue);
-	if (ret != 0) return ret;
+	if (ret == EOF) return ret;
 
 	ret = fputs("\nPassword: ", stdout);
-	if (ret != 0) return ret;
+	if (ret == EOF) return ret;
 
 	ret = puts(password_ptr);
-	if (ret != 0) return ret;
+	if (ret == EOF) return ret;
 
 	return puts("\n----------\n[S]ave password in pasword.txt (overwrites)\n[D]one\n");
 }
@@ -309,9 +309,11 @@ int writeFile(char* password_ptr, const char* fileMode, bool doNotWrite) {
 
 	if (doNotWrite == false) {
 
-		if (password_ptr == NULL) return ret_nullError;
-
-		if (fputs(password_ptr, file) != 0) {
+		if (password_ptr == NULL) {
+			puts("file write error!");
+			return ret_nullError;
+		}
+		if (fputs(password_ptr, file) == EOF) {
 			puts("file write error!");
 			return ret_ioError;
 		}
