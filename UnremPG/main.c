@@ -14,13 +14,25 @@ int getch() {
 
 #else
 
-#include<termios.h>
+#include <termios.h>
+#include <unistd.h>
 
 int getch() {
-	// todo
+
+	struct termios oldt, newt;
+	tcgetattr(STDIN_FILENO, &oldt);
+	newt = oldt;
+	mewt.c_lflag &= ~ICANON | ECHO);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+	int ch = getchar();
+
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+
+	return ch;	// better than nothing		
 }
 
-#define cls system("cls"); // clear the screen
+#define cls system("clear"); // clear the screen
 
 #endif //  _win32
 
