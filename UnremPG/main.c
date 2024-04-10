@@ -50,14 +50,22 @@ int getch() {
 #define ret_ioError -4
 #define ret_nullError -5
 
+struct unicodeChar {
+	unsigned int uchar;
+	unsigned int bytes;
+};
+
+
 int generate(int passwordLength, int random, bool bulk);
 int settings(unsigned short *passwordLength_ptr);
 int reset();
 int reset_settings();
 int password_options(char* password_ptr);
 int reset_password_options(char* password_ptr);
-int getNumber(unsigned int length, unsigned short *number);
-int writeFile(char* password_ptr, const char* fileMode, bool doNotWrite);
+int get_number(unsigned int length, unsigned short *number);
+int write_file(char* password_ptr, const char* fileMode, bool doNotWrite);
+bool isValidUnicode(struct unicodeChar uchar);
+struct unicodeChar generate_unicode_char(int free_bytes);
 
 const char newline[] = "\r\n";
 
@@ -111,10 +119,10 @@ int main() {
 			ret = puts("Amount of passwords:");
 			
 			unsigned short passwords;
-			ret = getNumber(2, &passwords);
+			ret = get_number(2, &passwords);
 			if (ret != 0) return ret;
 
-			writeFile(NULL, "w", true); // just create an emptry file
+			write_file(NULL, "w", true); // just create an emptry file
 
 			time(&random);	// get seconds since 00:00, Jan 1 1970 UTC
 
@@ -124,7 +132,7 @@ int main() {
 				ret = generate(passwordLength, seed, true);
 				if (ret != 0) return ret;	 // if we got a error, return the error
 
-				ret = writeFile(newline, "a", false);	// append a new line
+				ret = write_file(newline, "a", false);	// append a new line
 				if (ret != 0) return ret;	 // if we got a error, return the error
 
 			}
@@ -162,8 +170,8 @@ int generate(int passwordLength, int random, bool bulk) {
 		return ret_outOfMem;
 	}
 
-	unsigned char utf8_lenghts_data[4] =		  { 0b00000000,0b11000000,0b11100000,0b11110000 }; //data for the first byte to show the length of the char
-	unsigned char utf8_lenghts_data_maskI[4] = { 0b01111111,0b00011111,0b00001111,0b00000111 }; // mask of the data that shows the lenght of th char in the first byte. (Inverted)
+	unsigned char utf8_lenghts_data[4] =		{ 0b00000000,0b11000000,0b11100000,0b11110000 }; //data for the first byte to show the length of the char
+	unsigned char utf8_lenghts_data_maskI[4] =	{ 0b01111111,0b00011111,0b00001111,0b00000111 }; // mask of the data that shows the lenght of th char in the first byte. (Inverted)
 
 #define utf8_following	      0b10000000
 #define utf8_following_maskI  0b00111111
@@ -195,7 +203,7 @@ int generate(int passwordLength, int random, bool bulk) {
 				password_ptr[i] = utf8_lenghts_data[bytes - 1] + (password_ptr[i] & utf8_lenghts_data_maskI[bytes - 1]);	// make sure the formating is still right
 			}
 
-			if (password_ptr[i] < 0x20) // if we are in the range of controll charatcers
+			if (password_ptr[i] < 0x20 || password_ptr[i] == 0x7f) // if we are in the range of controll charatcers
 				password_ptr[i] += 0x20;	// dont let them be in the password.
 			
 			bytes--;
@@ -211,7 +219,7 @@ int generate(int passwordLength, int random, bool bulk) {
 
 	if (bulk == true) {
 
-		writeFile(password_ptr, "a", false);
+		write_file(password_ptr, "a", false);
 
 	}else {
 
@@ -249,7 +257,7 @@ int settings(unsigned short *passwordLength_ptr) {
 			int ret = puts("Password lenght: ");
 			if (ret == EOF) return ret;
 
-			ret = getNumber(2,passwordLength_ptr);
+			ret = get_number(2,passwordLength_ptr);
 			if (ret != 0) return ret;
 			
 			if (reset_settings() == EOF) return ret_outputError;	// idk how to fix the potential error from puts, so just close the progamm.
@@ -291,7 +299,7 @@ int reset_password_options(char* password_ptr) {
 }
 
 
-int writeFile(char* password_ptr, const char* fileMode, bool doNotWrite) {
+int write_file(char* password_ptr, const char* fileMode, bool doNotWrite) {
 	const char *filename = "./password.txt";	// fixed file name, because implementing anything else takes time
 
 	//
@@ -346,7 +354,7 @@ int password_options(char* password_ptr) {
 
 		case 'S':;
 
-			writeFile(password_ptr, "w", false);
+			write_file(password_ptr, "w", false);
 
 			int ret = puts("password saved.\npress any key...");
 			if (ret == EOF) return ret_inputError;
@@ -365,7 +373,7 @@ int password_options(char* password_ptr) {
 }
 
 
-int getNumber(unsigned int length, unsigned short *number) {
+int get_number(unsigned int length, unsigned short *number) {
 	
 	if (number == NULL) return ret_nullError;
 
@@ -415,4 +423,71 @@ int getNumber(unsigned int length, unsigned short *number) {
 
 	free(chars);
 	return 0;
+}
+
+struct unicodeChar generate_unicode_char(int free_bytes) { // generate unicode characters, until a valid character was found
+
+	unsigned char utf8_lenghts_data[4] = { 0b00000000,0b11000000,0b11100000,0b11110000 }; //data for the first byte to show the length of the char
+	unsigned char utf8_lenghts_data_maskI[4] = { 0b01111111,0b00011111,0b00001111,0b00000111 }; // mask of the data that shows the lenght of th char in the first byte. (Inverted)
+
+#define utf8_following	      0b10000000
+#define utf8_following_maskI  0b00111111
+
+	do {
+		int bytes = 0;
+		unsigned char output[] = { 0,0,0,0 };
+
+		int i = 0;
+
+		unsigned int unicodeLen = 0;
+
+		do {
+			if (bytes == 0) {
+				if (free_bytes > 4) free_bytes = 3; // we use this for UTF8 lenghts, and max is 4. but we only want to go up to 3, to avoid 'invalid' character
+
+				bytes = rand() % free_bytes + 1; // from 1 to 3
+				unicodeLen = bytes;
+
+				output[i] = utf8_lenghts_data[bytes - 1] + (((unsigned char)rand()) & utf8_lenghts_data_maskI[bytes - 1]);
+
+				if (bytes == 4 && output[i] >= 0xe0) {	// characters after this might not make much sense.
+					output[i] -= 0x20; // get it below 0xe0
+					output[i] = utf8_lenghts_data[bytes - 1] + (output[i] & utf8_lenghts_data_maskI[bytes - 1]);	// make sure the formating is still right
+				}
+
+				if (output[i] < 0x20 || output[i] == 0x7f) // if we are in the range of controll charatcers
+					output[i] += 0x20;	// dont let them be in the password.
+
+				bytes--;
+			}
+			else {
+				output[i] = utf8_following + (((unsigned char)rand()) & utf8_following_maskI);
+
+				bytes--;
+			}
+
+			i++;
+		} while (bytes != 0);
+
+		int lengthBackup = unicodeLen;
+		unicodeLen--;
+		unsigned int ret;
+		int shift = 0;
+
+		while (unicodeLen != 0) {
+			ret = output[unicodeLen] << shift;
+			shift += 8;
+			unicodeLen--;
+		}
+
+		struct unicodeChar stu = { ret, lengthBackup };
+
+		if (isValidUnicode(stu) == true) {
+			return stu;
+		}
+	} while (true);
+}
+
+bool isValidUnicode(struct unicodeChar uchar) {
+	return true;
 }
