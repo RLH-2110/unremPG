@@ -3,13 +3,13 @@
 #include <stdlib.h>
 #include "filter.h"
 
-#ifdef _WIN32
+#ifdef _WIN32 // also set for 64 bit
 
 #define cls system("cls"); // clear the screen
 
 #include<conio.h>;
 
-int getch() {
+int getchFunc() {
 	return _getch();
 }
 
@@ -90,11 +90,12 @@ int main() {
 	int ret;
 
 
-	reset();	// cls and draw the menue
+	// cls and draw the menue
+	if (reset() == EOF) return ret_outputError;	// idk how to fix the potential error from puts, so just close the progamm.
 
 	while (1) {
 
-		input = getch();
+		input = getchFunc();
 		if (input == EOF) return ret_inputError; // there was an error while inputting, so lets just exit the progamm
 		if (input >= 'a' && input <= 'z') input -= 0x20; // make it uppercase
 
@@ -122,7 +123,12 @@ int main() {
 			ret = get_number(2, &passwords);
 			if (ret != 0) return ret;
 
-			write_file(NULL, "w", true); // just create an emptry file
+			if (passwords == 0) { // abort if no passwords will be generated
+				if (reset() == EOF) return ret_outputError;
+				break;
+			} 
+
+			write_file(NULL, "w", true); // just create an emptry file (seems to always give an error)
 
 			time(&random);	// get seconds since 00:00, Jan 1 1970 UTC
 
@@ -139,7 +145,7 @@ int main() {
 
 			int ret = puts("\npasswords saved.\npress any key...");
 			if (ret == EOF) return ret_inputError;
-			getch();
+			getchFunc();
 
 			if (reset() == EOF) return ret_outputError;	// idk how to fix the potential error from puts, so just close the progamm.
 			break;
@@ -262,7 +268,7 @@ int settings() {
 
 	while (1) {
 
-		input = getch();
+		input = getchFunc();
 		if (input == EOF) return ret_inputError; // there was an error while inputting, so lets just exit the progamm
 		if (input >= 'a' && input <= 'z') input -= 0x20; // make it uppercase
 
@@ -278,6 +284,7 @@ int settings() {
 				checkUnicode = false;
 			else
 				checkUnicode = true;
+			if (reset_settings() == EOF) return ret_outputError;	// idk how to fix the potential error from puts, so just close the progamm.
 			break;
 		case 'L':;
 			
@@ -286,6 +293,8 @@ int settings() {
 
 			ret = get_number(2,&passwordLength);
 			if (ret != 0) return ret;
+
+			if (passwordLength == 0) passwordLength = 1; // bugfix
 			
 			if (reset_settings() == EOF) return ret_outputError;	// idk how to fix the potential error from puts, so just close the progamm.
 			break;
@@ -312,7 +321,7 @@ int reset_settings() {
 	char boolOut[] = { 'T','r','u','e',' ','\0' };
 	if (!checkUnicode)   memcpy(boolOut, &"False",6);
 
-	ret = printf("\n----------\n\nset Password [L]enght (%d)\nToggle valid [U]nicode checking (%s)\n[D]one\n",passwordLength,boolOut);
+	ret = printf("\n----------\n\nset Password [L]enght (%d)\nToggle valid [U]nicode checking ( %s)\n[D]one\n",passwordLength,boolOut);
 	if (ret < 0) return EOF;
 
 	return 0;
@@ -376,7 +385,7 @@ int password_options(char* password_ptr) {
 	while (1) {
 
 
-		input = getch();
+		input = getchFunc();
 		if (input == EOF) return ret_inputError; // there was an error while inputting, so lets just exit the progamm
 		if (input >= 'a' && input <= 'z') input -= 0x20; // make it uppercase
 		
@@ -392,7 +401,7 @@ int password_options(char* password_ptr) {
 
 			int ret = puts("password saved.\npress any key...");
 			if (ret == EOF) return ret_inputError;
-			getch();
+			getchFunc();
 
 			if (reset_password_options(password_ptr) == EOF) return ret_outputError;	// idk how to fix the potential error from puts, so just close the progamm.
 			break;
@@ -423,7 +432,7 @@ int get_number(unsigned int length, unsigned short *number) {
 	int i = 0;
 
 	while (input != '\n' && input != '\r') {
-		input = getch();
+		input = getchFunc();
 		if (input == EOF) return ret_inputError; // there was an error while inputting, so lets just exit the progamm
 
 		if (input == backspace && i > 0) {
@@ -534,7 +543,27 @@ int generate_unicode_char(int free_bytes, unicodeChar *stu) { // generate unicod
 			rawUnicode += (output[i] & 0b00111111);
 		}
 
-		if (filterUnicode(rawUnicode,FilterTag_Unassinged)) {
+		// workaround, idk why it does not take it from the header file.
+
+		enum FilterTag {
+			FilterTag_Controll = 0b0000000000000001, //		           1		// like 0x0
+			FilterTag_NewLines = 0b0000000000000010, //		          10		// like 0xa and 0xd aswell as 0xB
+			FilterTag_Spaces = 0b0000000000000100, //		         100		// like 0x9 and 0x20
+			FilterTag_Deletion = 0b0000000000001000, //		        1000		// like 0x8 and 0x7F
+			FilterTag_PageBreak = 0b0000000000010000, //		      1 0000		// like 0xC
+			FilterTag_Escape = 0b0000000000100000, //		     10 0000		// like 0x1B
+			FilterTag_NonSpaceInvis = 0b0000000001000000, //		    100 0000		// Invisible (Non Space/Tab) Characters
+			FilterTag_Unassigned = 0b0000000010000000, //		   1000 0000		// unassinged in unicode
+			FilterTag_PossibleNL = 0b0000000100000000, //		 1 0000 0000		// 0xAD (its either invisible, or visible and a line break)
+			FilterTag_Modify = 0b0000000100000000, //		10 0000 0000		// Modifies chars or text in a way. example: 0x34F and 0x61C or even 0x83
+			FilterTag_IDontKnow = 0b0000000100000000, //	   100 0000 0000		// 0x2061 - WHAT DOES IT DO???????
+			FilterTag_Surrogate = 0b0000001000000000, //	  1000 0000 0000		// surrogates (0xd800-0xdFFFF)
+		};
+
+		unsigned int keep = FilterTag_Spaces |	FilterTag_NonSpaceInvis	|FilterTag_Modify;
+		if (checkUnicode) keep |= FilterTag_Unassigned;
+
+		if (filterUnicode(rawUnicode, 0xFFFFFFFF ^ keep)) { // ^ = bitwise xor
 			return stu;
 		}
 	} while (true);
