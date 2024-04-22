@@ -18,7 +18,7 @@ int getchFunc() {
 #include <termios.h>
 #include <unistd.h>
 
-int getch() {
+int getchFunc() {
 
 	struct termios oldt, newt;
 	tcgetattr(STDIN_FILENO, &oldt);
